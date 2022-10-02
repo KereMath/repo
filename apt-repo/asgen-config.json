@@ -1,0 +1,21 @@
+{
+"ProjectName": "example",
+"ArchiveRoot": "http://127.0.0.1/kerem",
+"MediaBaseUrl": "http://127.0.0.1/media",
+"Features": {
+    "immutableSuites": false,
+    "validateMetainfo": true
+  },
+
+"Suites":
+  {
+    "stable":
+      {
+        "sections": ["main"],
+        "architectures": ["amd64"]
+      },
+    
+  },
+  
+}
+
