@@ -1,0 +1,217 @@
+To create package:
+mkdir -p ~/example/hello-world_0.0.1-1_amd64
+cd ~/example/hello-world_0.0.1-1_amd64
+mkdir -p usr/bin
+cp ~/example/hello-world-program/hello-world usr/bin/.
+mkdir -p ~/example/hello-world_0.0.1-1_amd64/DEBIAN
+
+echo "Package: hello-world
+Version: 0.0.1
+Maintainer: example <example@example.com>
+Depends: libc6
+Architecture: amd64
+Homepage: http://example.com
+Description: A program that prints hello" \
+> ~/example/hello-world_0.0.1-1_amd64/DEBIAN/control
+ 
+dpkg --build ~/example/hello-world_0.0.1-1_amd64
+
+
+to install the package:
+sudo apt-get install -f ~/example/hello-world_0.0.1-1_amd64.deb
+to test it:
+which hello-world
+/usr/bin/hello-world
+
+hello-world
+hello packaged world
+
+
+To create the apt repository:
+mkdir -p ~/example/apt-repo/pool/main/
+cp ~/example/hello-world_0.0.1-1_amd64.deb ~/example/apt-repo/pool/main/.
+mkdir -p ~/example/apt-repo/dists/stable/main/binary-amd64
+
+It’s also good practice to compress the packages file, as apt will favour downloading compressed data whenever available. Let’s do this by running:
+
+cat dists/stable/main/binary-amd64/Packages | gzip -9 > dists/stable/main/binary-amd64/Packages.gz
+
+
+The contents of the Packages file is a list of all available packages along with metadata from the DEBIAN/control file, and some hashes which can be used to validate the integrity of the package.
+
+Next we will create a Release file. Unfortunately dpkg-scanpackages does not create Release files. Some people use programs like apt-ftparchive; however in this example I’ll cover an alternative to apt-ftparchive by using a small bash script.
+
+First let’s look at an example of a Release file, which can be broken up into two parts:
+
+Metadata about the repository, for example:
+
+A list of all Packages files and their corresponding hashes and file size, for example:
+
+
+
+MD5Sum:
+ 9eb0c0528a0647daf18c7e225ac68f45 667 main/binary-amd64/Packages.gz
+ 628682afa8a0208e08b5a208a4c4c85b 1685 main/binary-amd64/Packages
+ b5bef2199e86a43ae02adc0b7b38bc8a 556 main/binary-arm7/Packages.gz
+ 81c53db3b9c5e9de44d3ca9fc4487995 1289 main/binary-arm7/Packages
+ 15258b054124639f0641c399f291af17 557 main/binary-arm64/Packages.gz
+ dc597a0815aebb56b25a4ad979682f49 1292 main/binary-arm64/Packages
+SHA1:
+ a4074284eb528e5d16c2c94e203d61dd825fa774 667 main/binary-amd64/Packages.gz
+ ee86dd9061967232e6e68104a695f7d45d191b41 1685 main/binary-amd64/Packages
+ a6f4897bcf6a4b068c5b8fafca01fc89761106dc 556 main/binary-arm7/Packages.gz
+ 43171192ce84dcb43bba99828fe7493ff23e0b0e 1289 main/binary-arm7/Packages
+ 9f353a909a9a3dab0a9cae1a3c7ccb879ff18d32 557 main/binary-arm64/Packages.gz
+ da15c24e51a028ff591656eef0d1da0dbb85ba97 1292 main/binary-arm64/Packages
+SHA256:
+ dee57f6f4a2209b63301984acb4b279f694648915fd559287a414365884c1842 667 main/binary-amd64/Packages.gz
+ 7d82e5929d909d10d9f2d7129df3f6754946397caf1c08e9e4a65713f4ac39ff 1685 main/binary-amd64/Packages
+ 2b3c611305e096ef246d77d2bc5fcfa807034dd200f8f99005ab640cf2c014a4 556 main/binary-arm7/Packages.gz
+ d03d5192e24e098a91465ab37d34e0a2c539f50a430eb3262a543e7bd11212a1 1289 main/binary-arm7/Packages
+ f96316ff77e96d246447f0ca8383472acefc0744d9b49d2be1d214d174bba38a 557 main/binary-arm64/Packages.gz
+ 58120a7b5ceb57ab4faca01adac3d62009a52962e0d0a6f4b7ceb1b8faedf280 1292 main/binary-arm64/Packages
+ 
+ And that’s it for what a Release file looks like. How hard could it be? let’s write some bash. 
+ Just copy and paste the following in your terminal to get a copy of the script:
+ echo '#!/bin/sh
+set -e
+
+do_hash() {
+    HASH_NAME=$1
+    HASH_CMD=$2
+    echo "${HASH_NAME}:"
+    for f in $(find -type f); do
+        f=$(echo $f | cut -c3-) # remove ./ prefix
+        if [ "$f" = "Release" ]; then
+            continue
+        fi
+        echo " $(${HASH_CMD} ${f}  | cut -d" " -f1) $(wc -c $f)"
+    done
+}
+
+cat << EOF
+Origin: Example Repository
+Label: Example
+Suite: stable
+Codename: stable
+Version: 1.0
+Architectures: amd64 arm64 arm7
+Components: main
+Description: An example software repository
+Date: $(date -Ru)
+EOF
+do_hash "MD5Sum" "md5sum"
+do_hash "SHA1" "sha1sum"
+do_hash "SHA256" "sha256sum"
+' > ~/example/generate-release.sh && chmod +x ~/example/generate-release.sh
+
+
+to run the generate release script:
+cd ~/example/apt-repo/dists/stable
+~/example/generate-release.sh > Release
+
+At this point, you can try hosting this repo for yourself. In this example we’ll use python’s simple HTTP server; however in practice you’ll want to use a production-ready server. Here’s how you can start it up for testing:
+
+cd ~/example
+python3 -m http.server
+Then configure this apt repository:
+
+
+echo "deb [arch=amd64] http://127.0.0.1:8000/apt-repo stable main" | sudo tee /etc/apt/sources.list.d/example.list
+
+To install the package:
+sudo apt-get update --allow-insecure-repositories
+sudo apt-get install hello-world
+
+we will see that :
+W: The repository 'http://127.0.0.1:8000/apt-repo stable Release' is not signed.
+N: Data from such a repository can't be authenticated and is therefore potentially dangerous to use.
+N: See apt-secure(8) manpage for repository creation and user configuration details.
+
+
+To create a trusted repository we need to sign it:
+To sign it I used GPG:
+Creating a New Public/Private PGP Key Pair:
+ First create a batch template by copying and pasting the following into your terminal:
+ echo "%echo Generating an example PGP key
+Key-Type: RSA
+Key-Length: 4096
+Name-Real: example
+Name-Email: example@example.com
+Expire-Date: 0
+%no-ask-passphrase
+%no-protection
+%commit" > /tmp/example-pgp-key.batch
+
+
+then we will generate it under a new temporary gpg keyring:
+export GNUPGHOME="$(mktemp -d ~/example/pgpkeys-XXXXXX)"
+gpg --no-tty --batch --gen-key /tmp/example-pgp-key.batch
+
+
+We can also view all of our loaded keys with:
+
+gpg --list-keys
+which will show something similar to
+
+/home/alex/example/pgpkeys-pyml86/pubring.kbx
+-------------------------------
+pub   rsa4096 2021-05-18 [SCEA]
+      B4D5C8B003C50A38A7E85B5989376CAC59892E72
+uid           [ultimate] example <example@example.com>
+This PGP key is comprised of both a public key, and a private key. Let’s start with exporting the public key:
+
+gpg --armor --export example > ~/example/pgp-key.public
+
+You can verify only a single key was exported by running:
+
+cat ~/example/pgp-key.public | gpg --list-packets
+
+Next let’s export the private key so we can back it up somewhere safe.
+
+gpg --armor --export-secret-keys example > ~/example/pgp-key.private
+
+
+Now that we’ve generated a PGP key pair, let’s move on to signing files with them.
+
+Before we start signing with out keys, let’s make sure that we can import the backup we made. To do that, we will create a new GPG keyring location:
+
+export GNUPGHOME="$(mktemp -d ~/example/pgpkeys-XXXXXX)"
+
+
+Next we will import our backed up private key:
+
+cat ~/example/pgp-key.private | gpg --import
+
+
+Ok, let’s get around to signing the Release file now.
+
+cat ~/example/apt-repo/dists/stable/Release | gpg --default-key example -abs > ~/example/apt-repo/dists/stable/Release.gpg
+The contents of Release.gpg should be similar to this:
+
+
+
+Now when an apt client performs an update, it will fetch both Release and Release.gpg and will verify the signature is valid; 
+However to increase the speed, we will create a third file InRelease which will combine both the contents of Release and the PGP signature:
+
+cat ~/example/apt-repo/dists/stable/Release | gpg --default-key example -abs --clearsign > ~/example/apt-repo/dists/stable/InRelease
+
+
+Testing It Out
+We need to tell apt which public pgp key to use when verifying the apt repository. We will add a new signed-by attribute to our apt config:
+
+echo "deb [arch=amd64 signed-by=$HOME/example/pgp-key.public] http://127.0.0.1:8000/apt-repo stable main" | sudo tee /etc/apt/sources.list.d/example.list
+
+
+after that:
+sudo apt-get install hello-world
+will give us no warnings.
+
+Keeping Your Private Key Secure
+If you followed this tutorial to the tee, and your web server is still running, what happens if we try running:
+
+curl http://127.0.0.1:8000/pgp-key.private
+Oh no! we just leaked our private key. Now’s the time to regenerate it but using a real name and email address other than example@example.com.
+
+
+
